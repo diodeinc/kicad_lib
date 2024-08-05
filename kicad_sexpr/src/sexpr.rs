@@ -7,9 +7,10 @@ use nom::{
     bytes::complete::tag,
     character::complete::{multispace0, multispace1, satisfy},
     combinator::{eof, recognize},
+    error::Error,
     multi::{many1, separated_list1},
     sequence::tuple,
-    IResult,
+    Finish, IResult,
 };
 use thiserror::Error;
 
@@ -194,15 +195,20 @@ impl Sexpr {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Clone)]
+#[derive(Debug, Error, PartialEq)]
 #[error("S-expression parse error")]
-pub struct SexprParseError;
+pub enum SexprParseError {
+    ParseError(#[from] Error<String>),
+    TrailingInput(String),
+}
 
 pub fn from_str(input: &str) -> Result<Sexpr, SexprParseError> {
-    let (input, sexpr) = parse_sexpr(input.trim()).map_err(|_| SexprParseError)?;
+    let (input, sexpr) = parse_sexpr(input.trim())
+        .map_err(|e| e.to_owned())
+        .finish()?;
 
     if !input.is_empty() {
-        return Err(SexprParseError);
+        return Err(SexprParseError::TrailingInput(input.to_string()));
     }
 
     Ok(sexpr)
