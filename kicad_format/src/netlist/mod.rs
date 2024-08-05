@@ -25,7 +25,7 @@ pub struct NetlistFile {
     /// List of library parts used in the circuit.
     pub libparts: Vec<LibPart>,
     /// List of libraries referenced in the netlist.
-    pub libraries: Vec<Library>,
+    pub libraries: Option<Vec<Library>>,
     /// List of nets (electrical connections) in the circuit.
     pub nets: Vec<Net>,
 }
@@ -47,11 +47,14 @@ impl FromSexpr for NetlistFile {
             Ok(libparts)
         })?;
         let libraries = parser
-            .expect_list_with_name("libraries")
-            .and_then(|mut p| {
+            .maybe_list_with_name("libraries")
+            .map(|mut p| {
                 let libraries = p.expect_many::<Library>()?;
-                Ok(libraries)
-            })?;
+                p.expect_end()?;
+                Ok::<Option<Vec<Library>>, KiCadParseError>(Some(libraries))
+            })
+            .transpose()
+            .map(|x| x.unwrap_or_default())?;
         let nets = parser.expect_list_with_name("nets").and_then(|mut p| {
             let nets = p.expect_many::<Net>()?;
             Ok(nets)
@@ -93,14 +96,16 @@ impl ToSexpr for NetlistFile {
                         .map(Some)
                         .collect::<Vec<_>>(),
                 )),
-                Some(Sexpr::list_with_name(
-                    "libraries",
-                    self.libraries
-                        .iter()
-                        .map(ToSexpr::to_sexpr)
-                        .map(Some)
-                        .collect::<Vec<_>>(),
-                )),
+                self.libraries.as_ref().map(|libraries| {
+                    Sexpr::list_with_name(
+                        "libraries",
+                        libraries
+                            .iter()
+                            .map(ToSexpr::to_sexpr)
+                            .map(Some)
+                            .collect::<Vec<_>>(),
+                    )
+                }),
                 Some(Sexpr::list_with_name(
                     "nets",
                     self.nets
@@ -371,7 +376,7 @@ pub struct Component {
     /// A description of the component.
     pub description: Option<String>,
     /// Fields associated with the component.
-    pub fields: Fields,
+    pub fields: Option<Fields>,
     /// The library source of the component.
     pub libsource: LibSource,
     /// Properties of the component.
@@ -397,7 +402,7 @@ impl FromSexpr for Component {
         let footprint = parser.maybe_string_with_name("footprint")?;
         let datasheet = parser.maybe_string_with_name("datasheet")?;
         let description = parser.maybe_string_with_name("description")?;
-        let fields = parser.expect::<Fields>()?;
+        let fields = parser.maybe::<Fields>()?;
         let libsource = parser.expect::<LibSource>()?;
         let properties = parser.expect_many::<Property>()?;
         let sheetpath = parser.expect::<SheetPath>()?;
@@ -438,7 +443,7 @@ impl ToSexpr for Component {
                 self.description
                     .as_ref()
                     .map(|d| Sexpr::string_with_name("description", d)),
-                Some(self.fields.to_sexpr()),
+                self.fields.as_ref().map(|f| f.to_sexpr()),
                 Some(self.libsource.to_sexpr()),
             ]
             .into_iter()
@@ -718,6 +723,12 @@ impl ToSexpr for LibPart {
 pub struct Fields {
     /// The list of fields.
     pub fields: Vec<Field>,
+}
+
+impl MaybeFromSexpr for Fields {
+    fn is_present(sexpr: &SexprList) -> bool {
+        sexpr.first_symbol().is_some_and(|x| x == "fields")
+    }
 }
 
 impl FromSexpr for Fields {
