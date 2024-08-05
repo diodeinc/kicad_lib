@@ -604,7 +604,7 @@ pub struct LibPart {
     /// The footprints associated with the part.
     pub footprints: Option<Vec<Footprint>>,
     /// The fields associated with the part.
-    pub fields: Vec<Field>,
+    pub fields: Option<Vec<Field>>,
     /// The pins associated with the part.
     pub pins: Option<Vec<Pin>>,
 }
@@ -632,11 +632,15 @@ impl FromSexpr for LibPart {
             })
             .transpose()
             .map(|x| x.unwrap_or_default())?;
-        let fields = parser.expect_list_with_name("fields").and_then(|mut p| {
-            let fields = p.expect_many::<Field>()?;
-            p.expect_end()?;
-            Ok(fields)
-        })?;
+        let fields = parser
+            .maybe_list_with_name("fields")
+            .map(|mut p| {
+                let fields = p.expect_many::<Field>()?;
+                p.expect_end()?;
+                Ok::<Option<Vec<Field>>, KiCadParseError>(Some(fields))
+            })
+            .transpose()
+            .map(|x| x.unwrap_or_default())?;
         let pins = parser
             .maybe_list_with_name("pins")
             .map(|mut p| {
@@ -683,14 +687,16 @@ impl ToSexpr for LibPart {
                             .collect::<Vec<_>>(),
                     )
                 }),
-                Some(Sexpr::list_with_name(
-                    "fields",
-                    self.fields
-                        .iter()
-                        .map(ToSexpr::to_sexpr)
-                        .map(Some)
-                        .collect::<Vec<_>>(),
-                )),
+                self.fields.as_ref().map(|fields| {
+                    Sexpr::list_with_name(
+                        "fields",
+                        fields
+                            .iter()
+                            .map(ToSexpr::to_sexpr)
+                            .map(Some)
+                            .collect::<Vec<_>>(),
+                    )
+                }),
                 self.pins.as_ref().map(|pins| {
                     Sexpr::list_with_name(
                         "pins",
