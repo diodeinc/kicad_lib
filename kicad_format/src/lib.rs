@@ -28,7 +28,7 @@ pub enum SexprKind {
 }
 
 /// Errors that can occur when parsing KiCad files.
-#[derive(Debug, Error, PartialEq, Clone)]
+#[derive(Debug, Error, PartialEq)]
 pub enum KiCadParseError {
     #[error(transparent)]
     SexprParseError(#[from] kicad_sexpr::SexprParseError),
