@@ -398,7 +398,16 @@ impl FromSexpr for TextEffects {
 
         let font = parser.expect::<Font>()?;
         let justify = parser.maybe::<Justify>()?;
-        let hide = parser.maybe_symbol_matching("hide");
+
+        // Handle hide as either a direct symbol or (hide yes) list
+        let hide = if let Some(mut hide_list) = parser.maybe_list_with_name("hide") {
+            let hide_val = hide_list.expect_symbol()?;
+            hide_list.expect_end()?;
+            hide_val == "yes"
+        } else {
+            parser.maybe_symbol_matching("hide")
+        };
+
         let href = parser.maybe_string_with_name("href")?;
 
         parser.expect_end()?;
@@ -419,7 +428,7 @@ impl ToSexpr for TextEffects {
             [
                 Some(self.font.to_sexpr()),
                 self.justify.as_ref().map(ToSexpr::to_sexpr),
-                self.hide.then(|| Sexpr::symbol("hide")),
+                self.hide.then(|| Sexpr::symbol_with_name("hide", "yes")),
                 self.href
                     .as_ref()
                     .map(|h| Sexpr::string_with_name("href", h)),
@@ -461,7 +470,15 @@ impl FromSexpr for Font {
         let line_spacing = parser.maybe_number_with_name("line_spacing")?;
         let thickness = parser.maybe_number_with_name("thickness")?;
         let bold = parser.maybe_symbol_matching("bold");
-        let italic = parser.maybe_symbol_matching("italic");
+
+        let italic = if let Some(mut italic_list) = parser.maybe_list_with_name("italic") {
+            let italic_val = italic_list.expect_symbol()?;
+            italic_list.expect_end()?;
+            italic_val == "yes"
+        } else {
+            parser.maybe_symbol_matching("italic")
+        };
+
         let color = parser.maybe::<Color>()?;
 
         parser.expect_end()?;
@@ -492,7 +509,8 @@ impl ToSexpr for Font {
                 self.thickness
                     .map(|t| Sexpr::number_with_name("thickness", t)),
                 self.bold.then(|| Sexpr::symbol("bold")),
-                self.italic.then(|| Sexpr::symbol("italic")),
+                self.italic
+                    .then(|| Sexpr::symbol_with_name("italic", "yes")),
                 self.color.as_ref().map(ToSexpr::to_sexpr),
             ],
         )
@@ -888,7 +906,12 @@ impl FromSexprWithName for Uuid {
     fn from_sexpr_with_name(mut parser: Parser, name: &str) -> Result<Self, KiCadParseError> {
         parser.expect_symbol_matching(name)?;
 
-        let uuid = parser.expect_symbol()?.parse()?;
+        // Try to parse as string first (KiCad 9 format), then fall back to symbol (older format)
+        let uuid = if let Some(uuid_str) = parser.maybe_string() {
+            uuid_str.parse()?
+        } else {
+            parser.expect_symbol()?.parse()?
+        };
 
         Ok(Self(uuid))
     }
@@ -904,7 +927,7 @@ impl ToSexpr for Uuid {
 
 impl ToSexprWithName for Uuid {
     fn to_sexpr_with_name(&self, name: &str) -> Sexpr {
-        Sexpr::list_with_name(name, [Some(Sexpr::symbol(self.to_string()))])
+        Sexpr::list_with_name(name, [Some(Sexpr::string(self.to_string()))])
     }
 }
 
@@ -1303,14 +1326,19 @@ impl FromSexpr for Group {
         let locked = parser.maybe_symbol_matching("locked");
         let id = parser.expect_with_name::<Uuid>("id")?;
         let members = parser.expect_list_with_name("members").and_then(|mut p| {
-            let members = p
-                .expect_many_symbols()?
-                .into_iter()
-                .map(|s| s.parse::<uuid::Uuid>())
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .map(Uuid::from)
-                .collect();
+            let mut members = Vec::new();
+
+            // Handle both string and symbol formats for UUIDs
+            while p.peek_next().is_some() {
+                let uuid = if let Some(uuid_str) = p.maybe_string() {
+                    uuid_str.parse::<uuid::Uuid>()?
+                } else if let Some(uuid_sym) = p.maybe_symbol() {
+                    uuid_sym.parse::<uuid::Uuid>()?
+                } else {
+                    break;
+                };
+                members.push(Uuid::from(uuid));
+            }
 
             p.expect_end()?;
 

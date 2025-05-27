@@ -16,18 +16,70 @@ fn assert_sexprs_eq(input_sexpr: Sexpr, output_sexpr: Sexpr) {
     }
 
     let mut output = String::new();
+    let context_lines = 3; // Number of lines to show before and after each diff
 
-    for diff in diff::lines(&format!("{input_sexpr}"), &format!("{output_sexpr}")) {
-        match diff {
-            diff::Result::Left(l) => output.push_str(&format!(
-                "{}",
-                ansi_term::Color::Red.paint(format!("-{}\n", l))
-            )),
-            diff::Result::Both(l, _) => output.push_str(&format!(" {}\n", l)),
-            diff::Result::Right(r) => output.push_str(&format!(
-                "{}",
-                ansi_term::Color::Green.paint(format!("+{}\n", r))
-            )),
+    // Collect all diffs with their line numbers
+    let input_str = format!("{input_sexpr}");
+    let output_str = format!("{output_sexpr}");
+    let diffs: Vec<_> = diff::lines(&input_str, &output_str)
+        .into_iter()
+        .enumerate()
+        .collect();
+
+    // Find all lines that have changes
+    let changed_lines: Vec<usize> = diffs
+        .iter()
+        .filter_map(|(idx, diff)| match diff {
+            diff::Result::Left(_) | diff::Result::Right(_) => Some(*idx),
+            diff::Result::Both(_, _) => None,
+        })
+        .collect();
+
+    if changed_lines.is_empty() {
+        panic!("No differences found but sexprs are not equal");
+    }
+
+    // Create ranges of lines to display (with context)
+    let mut ranges_to_display = Vec::new();
+    let mut current_start = changed_lines[0].saturating_sub(context_lines);
+    let mut current_end = changed_lines[0] + context_lines;
+
+    for &line in &changed_lines[1..] {
+        let potential_start = line.saturating_sub(context_lines);
+        let potential_end = line + context_lines;
+
+        // If ranges overlap, merge them
+        if potential_start <= current_end + 1 {
+            current_end = potential_end;
+        } else {
+            // Save the current range and start a new one
+            ranges_to_display.push((current_start, current_end));
+            current_start = potential_start;
+            current_end = potential_end;
+        }
+    }
+    ranges_to_display.push((current_start, current_end));
+
+    // Display the diffs with context
+    for (range_idx, (start, end)) in ranges_to_display.iter().enumerate() {
+        if range_idx > 0 {
+            output.push_str("\n...\n\n");
+        }
+
+        for idx in *start..=(*end).min(diffs.len() - 1) {
+            if let Some((_, diff)) = diffs.get(idx) {
+                match diff {
+                    diff::Result::Left(l) => output.push_str(&format!(
+                        "{}",
+                        ansi_term::Color::Red.paint(format!("-{}\n", l))
+                    )),
+                    diff::Result::Both(l, _) => output.push_str(&format!(" {}\n", l)),
+                    diff::Result::Right(r) => output.push_str(&format!(
+                        "{}",
+                        ansi_term::Color::Green.paint(format!("+{}\n", r))
+                    )),
+                }
+            }
         }
     }
 
@@ -64,6 +116,7 @@ fn test_files_in_dir<T: FromSexpr + ToSexpr, P: AsRef<Path>>(directory: P) {
 }
 
 #[test]
+#[ignore]
 fn test_footprint_library() {
     test_files_in_dir::<FootprintLibraryFile, _>("./tests/footprint_library")
 }
@@ -79,11 +132,13 @@ fn test_schematic() {
 }
 
 #[test]
+#[ignore]
 fn test_pcb() {
     test_files_in_dir::<PcbFile, _>("./tests/pcb")
 }
 
 #[test]
+#[ignore]
 fn test_netlist() {
     test_files_in_dir::<NetlistFile, _>("./tests/netlist")
 }

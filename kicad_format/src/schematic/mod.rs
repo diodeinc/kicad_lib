@@ -55,6 +55,7 @@ simple_to_from_string! {
 pub struct SchematicFile {
     pub version: u32,
     pub generator: String,
+    pub generator_version: Option<String>,
     pub uuid: Uuid,
     pub page_settings: PageSettings,
     pub title_block: Option<TitleBlock>,
@@ -81,7 +82,8 @@ impl FromSexpr for SchematicFile {
         parser.expect_symbol_matching("kicad_sch")?;
 
         let version = parser.expect_number_with_name("version")? as u32;
-        let generator = parser.expect_symbol_with_name("generator")?;
+        let generator = parser.expect_string_with_name("generator")?;
+        let generator_version = parser.maybe_string_with_name("generator_version")?;
         let uuid = parser.expect::<Uuid>()?;
         let page_settings = parser.expect::<PageSettings>()?;
         let title_block = parser.maybe::<TitleBlock>()?;
@@ -94,14 +96,15 @@ impl FromSexpr for SchematicFile {
                 Ok(symbols)
             })?;
         let bus_aliases = parser.expect_many::<BusAlias>()?;
-        let junctions = parser.expect_many::<Junction>()?;
-        let no_connects = parser.expect_many::<NoConnect>()?;
         let bus_entries = parser.expect_many::<BusEntry>()?;
-        let lines = parser.expect_many::<SchematicLine>()?;
+
         let shapes = parser.expect_many::<Shape>()?;
         let images = parser.expect_many::<Image>()?;
         let text_boxes = parser.expect_many::<SchematicTextBox>()?;
         let texts = parser.expect_many::<SchematicText>()?;
+        let junctions = parser.expect_many::<Junction>()?;
+        let no_connects = parser.expect_many::<NoConnect>()?;
+        let lines = parser.expect_many::<SchematicLine>()?;
         let local_labels = parser.expect_many::<LocalLabel>()?;
         let global_labels = parser.expect_many::<GlobalLabel>()?;
         let hierarchical_labels = parser.expect_many::<HierarchicalLabel>()?;
@@ -122,6 +125,7 @@ impl FromSexpr for SchematicFile {
         Ok(Self {
             version,
             generator,
+            generator_version,
             uuid,
             page_settings,
             title_block,
@@ -152,7 +156,10 @@ impl ToSexpr for SchematicFile {
             [
                 &[
                     Some(Sexpr::number_with_name("version", self.version as f32)),
-                    Some(Sexpr::symbol_with_name("generator", &self.generator)),
+                    Some(Sexpr::string_with_name("generator", &self.generator)),
+                    self.generator_version
+                        .as_ref()
+                        .map(|v| Sexpr::string_with_name("generator_version", v)),
                     Some(self.uuid.to_sexpr()),
                     Some(self.page_settings.to_sexpr()),
                     self.title_block.as_ref().map(ToSexpr::to_sexpr),
@@ -487,6 +494,7 @@ impl ToSexpr for SchematicTextBox {
 #[derive(Debug, PartialEq, Clone)]
 pub struct SchematicText {
     pub text: String,
+    pub exclude_from_sim: Option<bool>,
     pub position: Position,
     pub effects: TextEffects,
     pub uuid: Uuid,
@@ -497,6 +505,7 @@ impl FromSexpr for SchematicText {
         parser.expect_symbol_matching("text")?;
 
         let text = parser.expect_string()?;
+        let exclude_from_sim = parser.maybe_bool_with_name("exclude_from_sim")?;
         let position = parser.expect::<Position>()?;
         let effects = parser.expect::<TextEffects>()?;
         let uuid = parser.expect::<Uuid>()?;
@@ -505,6 +514,7 @@ impl FromSexpr for SchematicText {
 
         Ok(Self {
             text,
+            exclude_from_sim,
             position,
             effects,
             uuid,
@@ -520,6 +530,8 @@ impl ToSexpr for SchematicText {
             "text",
             [
                 Some(Sexpr::string(&self.text)),
+                self.exclude_from_sim
+                    .map(|b| Sexpr::bool_with_name("exclude_from_sim", b)),
                 Some(self.position.to_sexpr()),
                 Some(self.effects.to_sexpr()),
                 Some(self.uuid.to_sexpr()),

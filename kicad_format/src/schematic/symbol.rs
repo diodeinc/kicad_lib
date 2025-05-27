@@ -30,6 +30,7 @@ pub struct Symbol {
     pub mirror: Option<Mirror>,
     pub unit: u16,
     pub convert: Option<SymbolConversion>,
+    pub exclude_from_sim: Option<bool>,
     pub in_bom: bool,
     pub on_board: bool,
     pub dnp: bool,
@@ -56,6 +57,7 @@ impl FromSexpr for Symbol {
             .map(|c| c as u8)
             .map(TryFrom::try_from)
             .transpose()?;
+        let exclude_from_sim = parser.maybe_bool_with_name("exclude_from_sim")?;
         let in_bom = parser.expect_bool_with_name("in_bom")?;
         let on_board = parser.expect_bool_with_name("on_board")?;
         let dnp = parser.expect_bool_with_name("dnp")?;
@@ -82,6 +84,7 @@ impl FromSexpr for Symbol {
             mirror,
             unit,
             convert,
+            exclude_from_sim,
             in_bom,
             on_board,
             dnp,
@@ -117,6 +120,8 @@ impl ToSexpr for Symbol {
                     Some(Sexpr::number_with_name("unit", self.unit as f32)),
                     self.convert
                         .map(|c| Sexpr::number_with_name("convert", c as u8 as f32)),
+                    self.exclude_from_sim
+                        .map(|b| Sexpr::bool_with_name("exclude_from_sim", b)),
                     Some(Sexpr::bool_with_name("in_bom", self.in_bom)),
                     Some(Sexpr::bool_with_name("on_board", self.on_board)),
                     Some(Sexpr::bool_with_name("dnp", self.dnp)),
