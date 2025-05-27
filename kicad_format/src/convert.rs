@@ -43,49 +43,16 @@ impl SexprListExt for SexprList {
 #[derive(Debug, Clone)]
 pub struct Parser {
     inner: Peekable<IntoIter<Sexpr>>,
-    #[cfg(feature = "debug")]
-    debug_context: Vec<String>,
 }
 
 impl Parser {
     pub fn new(inner: SexprList) -> Self {
         Self {
             inner: inner.into_iter().peekable(),
-            #[cfg(feature = "debug")]
-            debug_context: Vec::new(),
-        }
-    }
-
-    #[cfg(feature = "debug")]
-    fn debug_print(&self, msg: &str) {
-        let indent = "  ".repeat(self.debug_context.len());
-        eprintln!("{}[DEBUG] {}", indent, msg);
-    }
-
-    #[cfg(feature = "debug")]
-    fn push_context(&mut self, context: String) {
-        self.debug_print(&format!(">>> Entering: {}", context));
-        self.debug_context.push(context);
-    }
-
-    #[cfg(feature = "debug")]
-    fn pop_context(&mut self) {
-        if let Some(context) = self.debug_context.pop() {
-            self.debug_print(&format!("<<< Leaving: {}", context));
         }
     }
 
     fn expect_next(&mut self) -> Result<Sexpr, KiCadParseError> {
-        #[cfg(feature = "debug")]
-        {
-            let next_str = if let Some(next) = self.inner.peek() {
-                format!("{:?}", next)
-            } else {
-                "EOF".to_string()
-            };
-            self.debug_print(&format!("expect_next: {}", next_str));
-        }
-
         self.inner
             .next()
             .ok_or(KiCadParseError::UnexpectedEndOfList)
@@ -116,17 +83,8 @@ impl Parser {
     /// If the next sexpr is not a list or the first symbol does not match, an
     /// error is returned.
     pub fn expect_list_with_name(&mut self, name: &str) -> Result<Parser, KiCadParseError> {
-        #[cfg(feature = "debug")]
-        self.push_context(format!("expect_list_with_name({})", name));
-
         let mut list = self.expect_list()?;
         list.expect_symbol_matching(name)?;
-
-        #[cfg(feature = "debug")]
-        {
-            self.debug_print(&format!("SUCCESS: Found list with name '{}'", name));
-            self.pop_context();
-        }
 
         Ok(list)
     }
@@ -156,30 +114,13 @@ impl Parser {
     /// If the next sexpr is not a symbol or it does not match the expected
     /// symbol, an error is returned.
     pub fn expect_symbol_matching(&mut self, expected: &str) -> Result<(), KiCadParseError> {
-        #[cfg(feature = "debug")]
-        self.push_context(format!("expect_symbol_matching({})", expected));
-
         let symbol = self.expect_symbol()?;
 
         if symbol != expected {
-            #[cfg(feature = "debug")]
-            {
-                self.debug_print(&format!(
-                    "ERROR: Symbol mismatch! Expected '{}', found '{}'",
-                    expected, symbol
-                ));
-                self.pop_context();
-            }
             return Err(KiCadParseError::NonMatchingSymbol {
                 found: symbol,
                 expected: expected.into(),
             });
-        }
-
-        #[cfg(feature = "debug")]
-        {
-            self.debug_print(&format!("SUCCESS: Found expected symbol '{}'", expected));
-            self.pop_context();
         }
 
         Ok(())
@@ -470,22 +411,6 @@ impl Parser {
     pub fn maybe_number_with_name(&mut self, name: &str) -> Result<Option<f32>, KiCadParseError> {
         self.maybe_list_with_name(name)
             .map(|mut d| d.expect_number())
-            .transpose()
-    }
-
-    pub fn maybe_bool_with_name(&mut self, name: &str) -> Result<Option<bool>, KiCadParseError> {
-        self.maybe_list_with_name(name)
-            .map(|mut d| {
-                let result = d.expect_symbol()?;
-                match result.as_str() {
-                    "yes" => Ok(true),
-                    "no" => Ok(false),
-                    _ => Err(KiCadParseError::InvalidEnumValue {
-                        value: result,
-                        enum_name: "bool",
-                    }),
-                }
-            })
             .transpose()
     }
 

@@ -27,12 +27,10 @@ pub struct LibSymbol {
     pub power: bool,
     pub hide_pin_numbers: bool,
     pub pin_names: Option<PinNames>,
-    pub exclude_from_sim: bool,
     pub in_bom: bool,
     pub on_board: bool,
     pub properties: Vec<SymbolProperty>,
     pub units: Vec<LibSymbolSubUnit>,
-    pub embedded_fonts: Option<bool>,
 }
 
 impl FromSexpr for LibSymbol {
@@ -43,37 +41,18 @@ impl FromSexpr for LibSymbol {
         let power = parser.maybe_empty_list_with_name("power")?;
         let hide_pin_numbers = parser
             .maybe_list_with_name("pin_numbers")
-            .map(|mut p| -> Result<bool, KiCadParseError> {
-                // In KiCad 9, pin_numbers can have (hide yes) inside
-                let mut hide = false;
-
-                // Check for hide as a list (hide yes)
-                if let Some(mut hide_list) = p.maybe_list_with_name("hide") {
-                    let hide_val = hide_list.expect_symbol()?;
-                    hide_list.expect_end()?;
-                    hide = hide_val == "yes";
-                } else if p.maybe_symbol_matching("hide") {
-                    // Check for hide as a direct symbol (older format)
-                    hide = true;
-                }
-
-                // Skip offset if present
-                let _ = p.maybe_number_with_name("offset")?;
-
+            .map(|mut p| {
+                p.expect_symbol_matching("hide")?;
                 p.expect_end()?;
-                Ok(hide)
+                Ok::<_, KiCadParseError>(())
             })
             .transpose()?
-            .unwrap_or(false);
+            .is_some();
         let pin_names = parser.maybe::<PinNames>()?;
-        let exclude_from_sim = parser
-            .maybe_bool_with_name("exclude_from_sim")?
-            .unwrap_or(false);
         let in_bom = parser.expect_bool_with_name("in_bom")?;
         let on_board = parser.expect_bool_with_name("on_board")?;
         let properties = parser.expect_many::<SymbolProperty>()?;
         let units = parser.expect_many::<LibSymbolSubUnit>()?;
-        let embedded_fonts = parser.maybe_bool_with_name("embedded_fonts")?;
 
         parser.expect_end()?;
 
@@ -82,12 +61,10 @@ impl FromSexpr for LibSymbol {
             power,
             hide_pin_numbers,
             pin_names,
-            exclude_from_sim,
             in_bom,
             on_board,
             properties,
             units,
-            embedded_fonts,
         })
     }
 }
@@ -105,18 +82,11 @@ impl ToSexpr for LibSymbol {
                     self.hide_pin_numbers
                         .then(|| Sexpr::symbol_with_name("pin_numbers", "hide")),
                     self.pin_names.as_ref().map(ToSexpr::to_sexpr),
-                    Some(Sexpr::bool_with_name(
-                        "exclude_from_sim",
-                        self.exclude_from_sim,
-                    )),
                     Some(Sexpr::bool_with_name("in_bom", self.in_bom)),
                     Some(Sexpr::bool_with_name("on_board", self.on_board)),
                 ][..],
                 &self.properties.into_sexpr_vec(),
                 &self.units.into_sexpr_vec(),
-                &[self
-                    .embedded_fonts
-                    .map(|v| Sexpr::bool_with_name("embedded_fonts", v))][..],
             ]
             .concat(),
         )
@@ -362,15 +332,7 @@ impl FromSexpr for PinNames {
         parser.expect_symbol_matching("pin_names")?;
 
         let offset = parser.maybe_number_with_name("offset")?;
-
-        // Handle hide as either a direct symbol or (hide yes) list
-        let hide = if let Some(mut hide_list) = parser.maybe_list_with_name("hide") {
-            let hide_val = hide_list.expect_symbol()?;
-            hide_list.expect_end()?;
-            hide_val == "yes"
-        } else {
-            parser.maybe_symbol_matching("hide")
-        };
+        let hide = parser.maybe_symbol_matching("hide");
 
         parser.expect_end()?;
 
@@ -386,7 +348,7 @@ impl ToSexpr for PinNames {
             "pin_names",
             [
                 self.offset.map(|o| Sexpr::number_with_name("offset", o)),
-                self.hide.then(|| Sexpr::symbol_with_name("hide", "yes")),
+                self.hide.then(|| Sexpr::symbol("hide")),
             ],
         )
     }
@@ -675,16 +637,7 @@ impl FromSexpr for Pin {
         let graphical_style = parser.expect_symbol()?.parse::<PinGraphicalStyle>()?;
         let position = parser.expect::<Position>()?;
         let length = parser.expect_number_with_name("length")?;
-
-        // Handle hide as either a direct symbol or (hide yes) list
-        let hide = if let Some(mut hide_list) = parser.maybe_list_with_name("hide") {
-            let hide_val = hide_list.expect_symbol()?;
-            hide_list.expect_end()?;
-            hide_val == "yes"
-        } else {
-            parser.maybe_symbol_matching("hide")
-        };
-
+        let hide = parser.maybe_symbol_matching("hide");
         let (name, name_effects) = parser.expect_list_with_name("name").and_then(|mut p| {
             let name = p.expect_string()?;
             let name_effects = p.expect::<TextEffects>()?;
@@ -731,7 +684,7 @@ impl ToSexpr for Pin {
                     Some(Sexpr::symbol(self.graphical_style)),
                     Some(self.position.to_sexpr()),
                     Some(Sexpr::number_with_name("length", self.length)),
-                    self.hide.then(|| Sexpr::symbol_with_name("hide", "yes")),
+                    self.hide.then(|| Sexpr::symbol("hide")),
                     Some(Sexpr::list_with_name(
                         "name",
                         [

@@ -20,6 +20,4 @@ diff = "0.1.13"
 
 
 [features]
-default = []
-serde = ["dep:serde", "kicad_sexpr/serde", "uuid/serde"]
-debug = []
+serde = ["dep:serde", "uuid/serde"]
